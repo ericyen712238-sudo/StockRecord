@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- SheetJS (Excel處理) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     
     <style>
         body { font-family: 'Noto Sans TC', sans-serif; }
@@ -46,6 +48,16 @@
             background-color: #f8fafc; 
             color: #2563eb;
         }
+        
+        /* 拖拉上傳區塊樣式 */
+        .drop-zone {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 pb-20 md:pb-0">
@@ -58,7 +70,6 @@
                     <i class="fa-solid fa-chart-line text-red-400 text-xl"></i>
                     <h1 class="text-xl font-bold tracking-wider">台美股記帳本</h1>
                 </div>
-                <!-- 手機版右側按鈕群 (如果需要可擴充) -->
             </div>
 
             <div class="flex items-center gap-3 w-full md:w-auto justify-end">
@@ -74,8 +85,11 @@
                         <div id="accountListContainer" class="max-h-60 overflow-y-auto">
                             <!-- JS 動態生成 -->
                         </div>
-                        <div class="border-t border-slate-100 p-2 bg-slate-50">
-                            <button onclick="openAccountManager()" class="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-slate-200 rounded-lg flex items-center gap-2 font-medium">
+                        <div class="border-t border-slate-100 bg-slate-50">
+                            <button onclick="openImportExport()" class="w-full text-left px-4 py-3 text-sm text-slate-600 hover:bg-slate-200 flex items-center gap-2 border-b border-slate-100">
+                                <i class="fa-solid fa-file-import"></i> 匯入/匯出資料
+                            </button>
+                            <button onclick="openAccountManager()" class="w-full text-left px-4 py-3 text-sm text-blue-600 hover:bg-slate-200 flex items-center gap-2 font-medium">
                                 <i class="fa-solid fa-cog"></i> 管理帳戶
                             </button>
                         </div>
@@ -244,6 +258,57 @@
         </div>
     </div>
 
+    <!-- 匯入/匯出 Modal -->
+    <div id="importExportModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden fade-in">
+            <div class="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
+                <h2 class="text-lg font-bold text-slate-800">資料匯入 / 匯出</h2>
+                <button onclick="closeImportExport()" class="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 space-y-6">
+                <!-- 匯出區塊 -->
+                <div>
+                    <h3 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-file-export text-blue-500"></i> 資料備份 (匯出)
+                    </h3>
+                    <p class="text-xs text-slate-500 mb-3">將目前的交易紀錄下載為 Excel 檔案，以防資料遺失。</p>
+                    <button onclick="exportData()" class="w-full bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium py-2 rounded-lg transition-colors flex justify-center items-center gap-2">
+                        <i class="fa-solid fa-download"></i> 下載 Excel 備份檔
+                    </button>
+                </div>
+
+                <hr class="border-slate-100">
+
+                <!-- 匯入區塊 -->
+                <div>
+                    <h3 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-file-import text-green-500"></i> 匯入交易紀錄
+                    </h3>
+                    <p class="text-xs text-slate-500 mb-3">支援 .xlsx 或 .csv 格式。請確保欄位包含：<br>日期、交易類別、代號、名稱、成交單價、股數、手續費</p>
+                    
+                    <div class="flex gap-2 mb-3">
+                        <button onclick="downloadTemplate()" class="text-xs text-blue-600 hover:underline">
+                            <i class="fa-solid fa-file-excel"></i> 下載範本檔案
+                        </button>
+                    </div>
+
+                    <div class="drop-zone p-6 rounded-xl text-center cursor-pointer bg-slate-50 hover:bg-slate-100" 
+                         onclick="document.getElementById('fileInput').click()"
+                         ondragover="event.preventDefault(); this.classList.add('dragover');"
+                         ondragleave="this.classList.remove('dragover');"
+                         ondrop="handleDrop(event)">
+                        <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-300 mb-2"></i>
+                        <p class="text-sm text-slate-500">點擊選擇檔案 或 拖拉至此</p>
+                        <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript 邏輯 -->
     <script>
         // --- 1. 股票資料庫 (模擬 Database) ---
@@ -299,7 +364,8 @@
             }
 
             // 設定今日日期
-            document.getElementById('date').valueAsDate = new Date();
+            const dateInput = document.getElementById('date');
+            if(dateInput) dateInput.valueAsDate = new Date();
             
             // 如果沒有價格紀錄，從 DB 初始化部分
             if (Object.keys(state.currentPrices).length === 0) {
@@ -331,8 +397,6 @@
             const sortedTrans = [...filteredTrans].sort((a, b) => new Date(a.date) - new Date(b.date));
 
             sortedTrans.forEach(t => {
-                // 如果是 All 視圖，key 加上 accountId 避免不同帳戶同股票混淆？
-                // 決定：All 視圖合併計算同代號股票，方便看總曝險。
                 const key = t.code; 
                 
                 if (!holdings[key]) {
@@ -644,17 +708,19 @@
 
             // 3. 更新 Modal 裡的選單
             const modalSelect = document.getElementById('modalAccountSelect');
-            modalSelect.innerHTML = '';
-            state.accounts.forEach(acc => {
-                const opt = document.createElement('option');
-                opt.value = acc.id;
-                opt.text = acc.name;
-                modalSelect.appendChild(opt);
-            });
-            
-            // 如果當前是在特定帳戶下，Modal 預設選該帳戶
-            if (state.activeAccountId !== 'all') {
-                modalSelect.value = state.activeAccountId;
+            if(modalSelect) {
+                modalSelect.innerHTML = '';
+                state.accounts.forEach(acc => {
+                    const opt = document.createElement('option');
+                    opt.value = acc.id;
+                    opt.text = acc.name;
+                    modalSelect.appendChild(opt);
+                });
+                
+                // 如果當前是在特定帳戶下，Modal 預設選該帳戶
+                if (state.activeAccountId !== 'all') {
+                    modalSelect.value = state.activeAccountId;
+                }
             }
         }
 
@@ -684,7 +750,6 @@
             state.accounts.forEach(acc => {
                 const div = document.createElement('div');
                 div.className = "flex justify-between items-center bg-slate-50 p-3 rounded-lg";
-                // 不允許刪除最後一個帳戶
                 const canDelete = state.accounts.length > 1;
                 
                 div.innerHTML = `
@@ -717,11 +782,9 @@
             if (!confirm("刪除帳戶不會刪除裡面的交易紀錄，但紀錄會變成孤兒無法顯示(除非歸戶到別的)。\n\n確定要刪除嗎？")) return;
             
             state.accounts = state.accounts.filter(a => a.id !== id);
-            // 若刪除的是當前帳戶，切回 All
             if (state.activeAccountId === id) {
                 state.activeAccountId = 'all';
             }
-            // 簡單處理：將該帳戶的交易歸到第一個帳戶 (避免資料遺失)
             const fallbackId = state.accounts[0].id;
             state.transactions.forEach(t => {
                 if(t.accountId === id) t.accountId = fallbackId;
@@ -733,7 +796,189 @@
             renderAll();
         }
 
-        // --- 6. 其他 UI 功能 ---
+        // --- 6. 匯入/匯出 功能 (NEW) ---
+        function openImportExport() {
+            document.getElementById('accountMenu').classList.add('hidden');
+            document.getElementById('importExportModal').classList.remove('hidden');
+            document.getElementById('importExportModal').classList.add('flex');
+        }
+
+        function closeImportExport() {
+            document.getElementById('importExportModal').classList.add('hidden');
+            document.getElementById('importExportModal').classList.remove('flex');
+            // reset file input
+            document.getElementById('fileInput').value = '';
+        }
+
+        function downloadTemplate() {
+            const templateData = [
+                {
+                    '交易日期': '2023-11-27',
+                    '交易類別': '買入', // 或 賣出
+                    '股票代號': '2330',
+                    '股票名稱': '台積電',
+                    '成交單價': 575,
+                    '股數': 1000,
+                    '手續費': 142,
+                    '幣別': 'TWD', // 或 USD
+                    '帳戶名稱': '主要帳戶' // (選填) 對應你建立的帳戶名稱
+                },
+                {
+                    '交易日期': '2023-11-28',
+                    '交易類別': '賣出',
+                    '股票代號': 'AAPL',
+                    '股票名稱': 'Apple',
+                    '成交單價': 190.5,
+                    '股數': 10,
+                    '手續費': 1.5,
+                    '幣別': 'USD',
+                    '帳戶名稱': '美股帳戶'
+                }
+            ];
+            
+            const ws = XLSX.utils.json_to_sheet(templateData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "匯入範本");
+            XLSX.writeFile(wb, "記帳本匯入範本.xlsx");
+        }
+
+        function exportData() {
+            // 匯出所有交易，並將 accountId 轉為 accountName 方便閱讀
+            const exportData = state.transactions.map(t => {
+                const accName = state.accounts.find(a => a.id === t.accountId)?.name || '未知帳戶';
+                return {
+                    '交易日期': t.date,
+                    '交易類別': t.type === 'buy' ? '買入' : '賣出',
+                    '股票代號': t.code,
+                    '股票名稱': t.name,
+                    '成交單價': t.price,
+                    '股數': t.qty,
+                    '手續費': t.fee,
+                    '幣別': t.currency || 'TWD',
+                    '帳戶名稱': accName
+                };
+            });
+
+            if (exportData.length === 0) {
+                alert("目前沒有交易資料可匯出！");
+                return;
+            }
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "交易紀錄");
+            
+            const dateStr = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(wb, `股票記帳備份_${dateStr}.xlsx`);
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            if (files.length > 0) {
+                processFile(files[0]);
+            }
+        }
+
+        function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    if (jsonData.length === 0) {
+                        alert("檔案內容為空！");
+                        return;
+                    }
+
+                    // 開始解析並匯入
+                    let importedCount = 0;
+                    jsonData.forEach(row => {
+                        // 欄位對應
+                        const dateRaw = row['交易日期'] || row['日期'] || row['Date'];
+                        const typeRaw = row['交易類別'] || row['類別'] || row['Type'];
+                        const code = row['股票代號'] || row['代號'] || row['Code'];
+                        const name = row['股票名稱'] || row['名稱'] || row['Name'];
+                        const price = row['成交單價'] || row['單價'] || row['價格'] || row['Price'];
+                        const qty = row['股數'] || row['數量'] || row['Qty'];
+                        const fee = row['手續費'] || row['Fee'] || 0;
+                        const currency = row['幣別'] || row['Currency'] || 'TWD';
+                        const accName = row['帳戶名稱'] || row['帳戶'] || row['Account'];
+
+                        // 簡易驗證
+                        if (!dateRaw || !code || !price || !qty) return;
+
+                        // 處理日期 (Excel 日期格式可能是數字)
+                        let dateStr = dateRaw;
+                        if (typeof dateRaw === 'number') {
+                            // Excel serial date to JS Date
+                            const excelDate = new Date(Math.round((dateRaw - 25569)*86400*1000));
+                            dateStr = excelDate.toISOString().split('T')[0];
+                        }
+
+                        // 處理類別
+                        let type = 'buy';
+                        if (typeRaw && (typeRaw.includes('賣') || typeRaw.toLowerCase() === 'sell')) {
+                            type = 'sell';
+                        }
+
+                        // 處理帳戶 (若找不到則歸到當前預設)
+                        let targetAccId = state.accounts[0].id; // default
+                        if (accName) {
+                            const foundAcc = state.accounts.find(a => a.name === accName);
+                            if (foundAcc) {
+                                targetAccId = foundAcc.id;
+                            } else {
+                                // 自動建立新帳戶? 這裡選擇不自動建立，歸入預設比較安全，或可選擇建立
+                                // 這裡簡單處理：歸入預設
+                            }
+                        }
+
+                        state.transactions.push({
+                            id: Date.now() + Math.random(), // 隨機ID避免衝突
+                            accountId: targetAccId,
+                            date: dateStr,
+                            type: type,
+                            code: String(code).toUpperCase(),
+                            name: String(name),
+                            currency: String(currency).toUpperCase(),
+                            price: Number(price),
+                            qty: Number(qty),
+                            fee: Number(fee)
+                        });
+                        
+                        // 更新最新價格
+                        state.currentPrices[String(code).toUpperCase()] = Number(price);
+
+                        importedCount++;
+                    });
+
+                    saveData();
+                    alert(`成功匯入 ${importedCount} 筆交易紀錄！`);
+                    closeImportExport();
+                    renderAll();
+
+                } catch (error) {
+                    console.error(error);
+                    alert("匯入失敗，請確認檔案格式是否正確。");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- 7. 其他 UI 功能 ---
         function switchTab(tab) {
             state.activeTab = tab;
             // Update UI styles
@@ -877,6 +1122,9 @@
             }
             if (event.target == document.getElementById('accountManagerModal')) {
                 closeAccountManager();
+            }
+            if (event.target == document.getElementById('importExportModal')) {
+                closeImportExport();
             }
             // Close dropdown if clicked outside
             if (!event.target.closest('.group') && !document.getElementById('accountMenu').classList.contains('hidden')) {
