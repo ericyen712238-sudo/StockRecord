@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>台美股投資記帳本 (多帳戶版)</title>
+    <title>台美股投資記帳本 (Yahoo連動版)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
@@ -58,6 +58,18 @@
             border-color: #3b82f6;
             background-color: #eff6ff;
         }
+
+        /* Loading Spinner */
+        .loader {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 pb-20 md:pb-0">
@@ -114,7 +126,7 @@
             <div class="flex items-center gap-2">
                 <i class="fa-solid fa-earth-americas"></i>
                 <span>USD/TWD 匯率: </span>
-                <input type="number" id="exchangeRate" value="31.5" class="w-16 bg-white border border-slate-300 rounded px-1 text-center" onchange="updateDashboard()">
+                <input type="number" id="exchangeRate" value="32.5" class="w-16 bg-white border border-slate-300 rounded px-1 text-center" onchange="updateDashboard()">
             </div>
         </div>
 
@@ -174,16 +186,22 @@
                     </div>
                 </div>
 
-                <!-- 股票代號 (自動完成) -->
+                <!-- 股票代號 (自動完成 + API 抓取) -->
                 <div class="relative">
-                    <label class="block text-xs font-bold text-slate-500 mb-1">股票代號/名稱 (搜尋)</label>
-                    <div class="relative">
-                        <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
-                        <input type="text" id="code" required placeholder="輸入 2330 或 AAPL..." autocomplete="off"
-                            class="w-full pl-9 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none uppercase font-mono"
-                            oninput="handleStockInput(this.value)">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">股票代號 (輸入後點擊抓取)</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
+                            <input type="text" id="code" required placeholder="例如: 2330, 00981A 或 NVDA" autocomplete="off"
+                                class="w-full pl-9 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none uppercase font-mono"
+                                oninput="handleStockInput(this.value)">
+                        </div>
+                        <button type="button" onclick="fetchYahooData()" id="fetchBtn" class="bg-blue-100 text-blue-700 px-3 rounded-lg font-bold text-sm hover:bg-blue-200 transition-colors whitespace-nowrap flex items-center gap-1">
+                            <i class="fa-solid fa-cloud-download-alt"></i> 抓取報價
+                        </button>
                     </div>
                     <div id="autocomplete-list" class="autocomplete-items hidden"></div>
+                    <p id="fetchMsg" class="text-xs mt-1 h-4"></p>
                 </div>
 
                 <!-- 股票資訊預覽 -->
@@ -311,30 +329,17 @@
 
     <!-- JavaScript 邏輯 -->
     <script>
-        // --- 1. 股票資料庫 (模擬 Database) ---
+        // --- 1. 股票資料庫 (內建快取與備援) ---
+        // 當 Yahoo 連線失敗時，可以使用這些作為建議選單
         const STOCK_DB = [
-            // 台股
-            { code: '2330', name: '台積電', type: 'TW', price: 580 },
-            { code: '2317', name: '鴻海', type: 'TW', price: 102 },
-            { code: '2454', name: '聯發科', type: 'TW', price: 950 },
-            { code: '2603', name: '長榮', type: 'TW', price: 155 },
-            { code: '2303', name: '聯電', type: 'TW', price: 50.5 },
-            { code: '0050', name: '元大台灣50', type: 'TW', price: 135 },
-            { code: '0056', name: '元大高股息', type: 'TW', price: 35 },
-            { code: '00878', name: '國泰永續高股息', type: 'TW', price: 21.5 },
-            { code: '00929', name: '復華台灣科技優息', type: 'TW', price: 18.2 },
-            // 美股
-            { code: 'AAPL', name: 'Apple Inc.', type: 'US', price: 195.5 },
-            { code: 'MSFT', name: 'Microsoft', type: 'US', price: 375.2 },
-            { code: 'TSLA', name: 'Tesla', type: 'US', price: 240.1 },
-            { code: 'NVDA', name: 'NVIDIA', type: 'US', price: 485.6 },
-            { code: 'GOOGL', name: 'Alphabet A', type: 'US', price: 138.2 },
-            { code: 'AMZN', name: 'Amazon', type: 'US', price: 145.8 },
-            { code: 'AMD', name: 'AMD', type: 'US', price: 120.5 },
-            { code: 'META', name: 'Meta', type: 'US', price: 330.4 },
-            { code: 'NFLX', name: 'Netflix', type: 'US', price: 475.2 },
-            { code: 'VOO', name: 'Vanguard S&P 500', type: 'US', price: 435.1 },
-            { code: 'QQQ', name: 'Invesco QQQ', type: 'US', price: 390.5 }
+            { code: '0050', name: '元大台灣50', type: 'TW', price: 195 },
+            { code: '2330', name: '台積電', type: 'TW', price: 1050 },
+            { code: 'NVDA', name: 'NVIDIA', type: 'US', price: 145 },
+            { code: 'AAPL', name: 'Apple', type: 'US', price: 235 },
+            { code: 'MSFT', name: 'Microsoft', type: 'US', price: 460 },
+            { code: 'TSLA', name: 'Tesla', type: 'US', price: 320 },
+            { code: 'QQQ', name: 'Invesco QQQ', type: 'US', price: 510 },
+            { code: 'VOO', name: 'Vanguard S&P 500', type: 'US', price: 550 }
         ];
 
         // --- 2. 狀態管理 ---
@@ -344,14 +349,13 @@
             activeTab: 'portfolio',
             transactions: JSON.parse(localStorage.getItem('stock_transactions')) || [],
             currentPrices: JSON.parse(localStorage.getItem('stock_prices')) || {},
-            exchangeRate: 31.5,
+            exchangeRate: 32.5,
             accounts: JSON.parse(localStorage.getItem('stock_accounts')) || [{id: DEFAULT_ACC_ID, name: '主要帳戶'}],
             activeAccountId: 'all' // 'all' or specific account id
         };
 
         // 初始化與遷移邏輯
         window.onload = () => {
-            // 資料遷移：如果舊資料沒有 accountId，分配給預設帳戶
             let migrated = false;
             state.transactions.forEach(t => {
                 if (!t.accountId) {
@@ -359,15 +363,11 @@
                     migrated = true;
                 }
             });
-            if (migrated) {
-                saveData();
-            }
+            if (migrated) saveData();
 
-            // 設定今日日期
             const dateInput = document.getElementById('date');
             if(dateInput) dateInput.valueAsDate = new Date();
             
-            // 如果沒有價格紀錄，從 DB 初始化部分
             if (Object.keys(state.currentPrices).length === 0) {
                 STOCK_DB.forEach(stock => {
                     state.currentPrices[stock.code] = stock.price;
@@ -384,12 +384,100 @@
             localStorage.setItem('stock_prices', JSON.stringify(state.currentPrices));
         }
 
+        // --- NEW: Yahoo Finance Fetcher via Proxy ---
+        async function fetchYahooData() {
+            let symbol = document.getElementById('code').value.trim().toUpperCase();
+            if(!symbol) {
+                showFetchMsg('請先輸入代號', 'text-red-500');
+                return;
+            }
+
+            // 智能後綴判斷
+            // 修正 Regex：支援 4-6 位數字，且可以選配一個英文字母 (例如 00981A, 2881A)
+            // 原本是 /^\d{4,6}$/，現在改為 /^\d{4,6}[A-Z]?$/
+            if (/^\d{4,6}[A-Z]?$/.test(symbol)) {
+                symbol += '.TW';
+            }
+
+            const btn = document.getElementById('fetchBtn');
+            const originalBtnContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="loader"></span> 抓取中...`;
+            showFetchMsg('', '');
+
+            try {
+                // 使用 CORS Proxy 繞過瀏覽器限制
+                // 備用 Proxy: https://api.allorigins.win/raw?url=
+                const proxyUrl = 'https://corsproxy.io/?'; 
+                const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
+                const targetUrl = proxyUrl + encodeURIComponent(yahooUrl);
+
+                const response = await fetch(targetUrl);
+                if (!response.ok) throw new Error('Network error');
+                
+                const data = await response.json();
+                const quote = data.quoteResponse?.result?.[0];
+
+                if (quote) {
+                    // 成功抓取
+                    document.getElementById('name').value = quote.longName || quote.shortName || symbol;
+                    document.getElementById('price').value = quote.regularMarketPrice;
+                    
+                    // 判斷幣別
+                    const currency = quote.currency === 'TWD' ? 'TWD' : 'USD';
+                    document.getElementById('currency').value = currency;
+                    
+                    // 如果是台股但使用者輸入時沒加.TW，這裡把input修正，或者保留使用者輸入的原始碼?
+                    // 為了乾淨，保留使用者輸入的原始碼(移除.TW)
+                    // document.getElementById('code').value = symbol.replace('.TW', '');
+                    
+                    showFetchMsg(`成功更新: ${quote.regularMarketPrice} ${quote.currency}`, 'text-green-600');
+                    
+                    // 自動更新本地快取價格
+                    // Remove .TW for storage key if user prefers
+                    const storeKey = symbol.replace('.TW', '');
+                    state.currentPrices[storeKey] = quote.regularMarketPrice;
+                    saveData();
+                } else {
+                    // 嘗試 .TWO (上櫃)?
+                    if (symbol.endsWith('.TW')) {
+                        // Retry with .TWO
+                        const otcSymbol = symbol.replace('.TW', '.TWO');
+                        const otcUrl = proxyUrl + encodeURIComponent(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${otcSymbol}`);
+                        const otcRes = await fetch(otcUrl);
+                        const otcData = await otcRes.json();
+                        const otcQuote = otcData.quoteResponse?.result?.[0];
+                        
+                        if(otcQuote) {
+                             document.getElementById('name').value = otcQuote.longName || otcQuote.shortName;
+                             document.getElementById('price').value = otcQuote.regularMarketPrice;
+                             document.getElementById('currency').value = 'TWD';
+                             showFetchMsg(`成功更新(上櫃): ${otcQuote.regularMarketPrice}`, 'text-green-600');
+                             return;
+                        }
+                    }
+                    throw new Error('找不到此股票');
+                }
+            } catch (error) {
+                console.error(error);
+                showFetchMsg('查無資料，請手動輸入', 'text-red-500');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalBtnContent;
+            }
+        }
+
+        function showFetchMsg(msg, colorClass) {
+            const el = document.getElementById('fetchMsg');
+            el.innerText = msg;
+            el.className = "text-xs mt-1 h-4 font-bold " + colorClass;
+        }
+
         // --- 3. 核心邏輯 (計算) ---
         function calculatePortfolio() {
             const holdings = {};
             let totalRealizedPnL_TWD = 0;
 
-            // 根據 activeAccountId 過濾交易
             const filteredTrans = state.activeAccountId === 'all' 
                 ? state.transactions 
                 : state.transactions.filter(t => t.accountId === state.activeAccountId);
@@ -427,7 +515,6 @@
                     const tradePnL = revenue - costBasis;
                     
                     stock.realizedPnL += tradePnL;
-                    // 將已實現損益換算回台幣加總 (若是美股)
                     totalRealizedPnL_TWD += (stock.currency === 'USD' ? tradePnL * state.exchangeRate : tradePnL);
 
                     stock.qty -= qty;
@@ -439,9 +526,14 @@
                 }
             });
 
-            // 計算現值與未實現損益
             const holdingList = Object.values(holdings).filter(h => h.qty > 0 || h.realizedPnL !== 0).map(h => {
-                const currentPrice = state.currentPrices[h.code] || h.avgCost;
+                let currentPrice = state.currentPrices[h.code];
+                if (!currentPrice) {
+                     const dbStock = STOCK_DB.find(s => s.code === h.code);
+                     if (dbStock) currentPrice = dbStock.price;
+                }
+                if (!currentPrice) currentPrice = h.avgCost;
+
                 const marketValue = h.qty * currentPrice;
                 const unrealizedPnL = marketValue - h.totalCost;
                 const returnRate = h.totalCost > 0 ? (unrealizedPnL / h.totalCost) * 100 : 0;
@@ -449,7 +541,6 @@
                 return { ...h, currentPrice, marketValue, unrealizedPnL, returnRate };
             });
 
-            // 總資產計算 (全部換算回 TWD)
             let totalMarketValue_TWD = 0;
             let totalCost_TWD = 0;
 
@@ -474,11 +565,10 @@
 
         // --- 4. 渲染 UI ---
         function renderAll() {
-            state.exchangeRate = Number(document.getElementById('exchangeRate').value) || 31.5;
+            state.exchangeRate = Number(document.getElementById('exchangeRate').value) || 32.5;
             const data = calculatePortfolio();
             renderSummary(data.summary);
             
-            // Update Hint
             const hint = document.getElementById('viewingHint');
             if (state.activeAccountId === 'all') {
                 hint.innerText = `目前檢視：全部帳戶`;
@@ -562,7 +652,6 @@
                 const pnlColor = h.unrealizedPnL > 0 ? 'text-red-500' : (h.unrealizedPnL < 0 ? 'text-green-500' : 'text-slate-500');
                 const badgeColor = h.returnRate > 0 ? 'bg-red-50 text-red-600' : (h.returnRate < 0 ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500');
                 
-                // 格式化：美股保留2位小數，台股整數(市值)
                 const fmtMoney = (val) => new Intl.NumberFormat('en-US', { minimumFractionDigits: h.currency==='USD'?2:0, maximumFractionDigits: 2 }).format(val);
 
                 html += `
@@ -602,7 +691,6 @@
 
         function renderTransactionsTable() {
             const container = document.getElementById('contentArea');
-            // Filter first
             const filteredTrans = state.activeAccountId === 'all' 
                 ? state.transactions 
                 : state.transactions.filter(t => t.accountId === state.activeAccountId);
@@ -637,7 +725,6 @@
                 const isBuy = t.type === 'buy';
                 const total = (t.price * t.qty) + (isBuy ? Number(t.fee) : -Number(t.fee));
                 const currency = t.currency || 'TWD';
-                // 找帳戶名稱
                 const accName = state.accounts.find(a => a.id === t.accountId)?.name || '未知';
                 
                 html += `
@@ -675,20 +762,16 @@
             menu.classList.toggle('hidden');
         }
 
-        // 更新帳戶選單 UI
         function updateAccountMenuUI() {
-            // 1. 更新 Navbar 下拉清單
             const listContainer = document.getElementById('accountListContainer');
             listContainer.innerHTML = '';
             
-            // "全部帳戶" 選項
             const allDiv = document.createElement('div');
             allDiv.className = `px-4 py-3 cursor-pointer hover:bg-slate-50 flex justify-between items-center ${state.activeAccountId === 'all' ? 'bg-blue-50 text-blue-700' : ''}`;
             allDiv.onclick = () => switchAccount('all');
             allDiv.innerHTML = `<span class="font-medium">全部帳戶 (總覽)</span> ${state.activeAccountId === 'all' ? '<i class="fa-solid fa-check text-xs"></i>' : ''}`;
             listContainer.appendChild(allDiv);
 
-            // 個別帳戶選項
             state.accounts.forEach(acc => {
                 const div = document.createElement('div');
                 div.className = `px-4 py-3 cursor-pointer hover:bg-slate-50 flex justify-between items-center border-t border-slate-50 ${state.activeAccountId === acc.id ? 'bg-blue-50 text-blue-700' : ''}`;
@@ -697,7 +780,6 @@
                 listContainer.appendChild(div);
             });
 
-            // 2. 更新 Navbar 按鈕文字
             const currentLabel = document.getElementById('currentAccountLabel');
             if (state.activeAccountId === 'all') {
                 currentLabel.innerText = "全部帳戶";
@@ -706,7 +788,6 @@
                 currentLabel.innerText = acc ? acc.name : '選擇帳戶';
             }
 
-            // 3. 更新 Modal 裡的選單
             const modalSelect = document.getElementById('modalAccountSelect');
             if(modalSelect) {
                 modalSelect.innerHTML = '';
@@ -717,7 +798,6 @@
                     modalSelect.appendChild(opt);
                 });
                 
-                // 如果當前是在特定帳戶下，Modal 預設選該帳戶
                 if (state.activeAccountId !== 'all') {
                     modalSelect.value = state.activeAccountId;
                 }
@@ -796,7 +876,7 @@
             renderAll();
         }
 
-        // --- 6. 匯入/匯出 功能 (NEW) ---
+        // --- 6. 匯入/匯出 功能 ---
         function openImportExport() {
             document.getElementById('accountMenu').classList.add('hidden');
             document.getElementById('importExportModal').classList.remove('hidden');
@@ -806,7 +886,6 @@
         function closeImportExport() {
             document.getElementById('importExportModal').classList.add('hidden');
             document.getElementById('importExportModal').classList.remove('flex');
-            // reset file input
             document.getElementById('fileInput').value = '';
         }
 
@@ -814,25 +893,14 @@
             const templateData = [
                 {
                     '交易日期': '2023-11-27',
-                    '交易類別': '買入', // 或 賣出
+                    '交易類別': '買入', 
                     '股票代號': '2330',
                     '股票名稱': '台積電',
                     '成交單價': 575,
                     '股數': 1000,
                     '手續費': 142,
-                    '幣別': 'TWD', // 或 USD
-                    '帳戶名稱': '主要帳戶' // (選填) 對應你建立的帳戶名稱
-                },
-                {
-                    '交易日期': '2023-11-28',
-                    '交易類別': '賣出',
-                    '股票代號': 'AAPL',
-                    '股票名稱': 'Apple',
-                    '成交單價': 190.5,
-                    '股數': 10,
-                    '手續費': 1.5,
-                    '幣別': 'USD',
-                    '帳戶名稱': '美股帳戶'
+                    '幣別': 'TWD',
+                    '帳戶名稱': '主要帳戶'
                 }
             ];
             
@@ -843,7 +911,6 @@
         }
 
         function exportData() {
-            // 匯出所有交易，並將 accountId 轉為 accountName 方便閱讀
             const exportData = state.transactions.map(t => {
                 const accName = state.accounts.find(a => a.id === t.accountId)?.name || '未知帳戶';
                 return {
@@ -903,10 +970,8 @@
                         return;
                     }
 
-                    // 開始解析並匯入
                     let importedCount = 0;
                     jsonData.forEach(row => {
-                        // 欄位對應
                         const dateRaw = row['交易日期'] || row['日期'] || row['Date'];
                         const typeRaw = row['交易類別'] || row['類別'] || row['Type'];
                         const code = row['股票代號'] || row['代號'] || row['Code'];
@@ -917,37 +982,29 @@
                         const currency = row['幣別'] || row['Currency'] || 'TWD';
                         const accName = row['帳戶名稱'] || row['帳戶'] || row['Account'];
 
-                        // 簡易驗證
                         if (!dateRaw || !code || !price || !qty) return;
 
-                        // 處理日期 (Excel 日期格式可能是數字)
                         let dateStr = dateRaw;
                         if (typeof dateRaw === 'number') {
-                            // Excel serial date to JS Date
                             const excelDate = new Date(Math.round((dateRaw - 25569)*86400*1000));
                             dateStr = excelDate.toISOString().split('T')[0];
                         }
 
-                        // 處理類別
                         let type = 'buy';
                         if (typeRaw && (typeRaw.includes('賣') || typeRaw.toLowerCase() === 'sell')) {
                             type = 'sell';
                         }
 
-                        // 處理帳戶 (若找不到則歸到當前預設)
-                        let targetAccId = state.accounts[0].id; // default
+                        let targetAccId = state.accounts[0].id;
                         if (accName) {
                             const foundAcc = state.accounts.find(a => a.name === accName);
                             if (foundAcc) {
                                 targetAccId = foundAcc.id;
-                            } else {
-                                // 自動建立新帳戶? 這裡選擇不自動建立，歸入預設比較安全，或可選擇建立
-                                // 這裡簡單處理：歸入預設
                             }
                         }
 
                         state.transactions.push({
-                            id: Date.now() + Math.random(), // 隨機ID避免衝突
+                            id: Date.now() + Math.random(),
                             accountId: targetAccId,
                             date: dateStr,
                             type: type,
@@ -959,9 +1016,7 @@
                             fee: Number(fee)
                         });
                         
-                        // 更新最新價格
                         state.currentPrices[String(code).toUpperCase()] = Number(price);
-
                         importedCount++;
                     });
 
@@ -981,7 +1036,6 @@
         // --- 7. 其他 UI 功能 ---
         function switchTab(tab) {
             state.activeTab = tab;
-            // Update UI styles
             document.getElementById('tab-portfolio').className = tab === 'portfolio' ? 
                 'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-blue-600 text-blue-600' : 
                 'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700';
@@ -1011,7 +1065,6 @@
         function openModal() {
             document.getElementById('transactionModal').classList.remove('hidden');
             document.getElementById('transactionModal').classList.add('flex');
-            // 如果當前是 All，選單預設選第一個，否則選當前
             const select = document.getElementById('modalAccountSelect');
             if (state.activeAccountId !== 'all') {
                 select.value = state.activeAccountId;
@@ -1021,7 +1074,6 @@
         function closeModal() {
             document.getElementById('transactionModal').classList.add('hidden');
             document.getElementById('transactionModal').classList.remove('flex');
-            // Reset form suggestion
             document.getElementById('autocomplete-list').innerHTML = '';
             document.getElementById('autocomplete-list').classList.add('hidden');
         }
@@ -1040,17 +1092,14 @@
             }
         }
 
-        // 搜尋自動完成功能
         function handleStockInput(val) {
+            // 原有的搜尋建議功能保留，但不再是唯一來源
             const list = document.getElementById('autocomplete-list');
             list.innerHTML = '';
             list.classList.add('hidden');
-            
             if (!val) return;
 
-            const matches = STOCK_DB.filter(s => 
-                s.code.includes(val.toUpperCase()) || s.name.includes(val)
-            );
+            const matches = STOCK_DB.filter(s => s.code.includes(val.toUpperCase()) || s.name.includes(val));
 
             if (matches.length > 0) {
                 list.classList.remove('hidden');
@@ -1077,7 +1126,6 @@
             document.getElementById('name').value = stock.name;
             document.getElementById('price').value = stock.price;
             document.getElementById('currency').value = stock.type === 'TW' ? 'TWD' : 'USD';
-            
             document.getElementById('autocomplete-list').innerHTML = '';
             document.getElementById('autocomplete-list').classList.add('hidden');
         }
@@ -1099,15 +1147,12 @@
             };
 
             state.transactions.push(newTrans);
-            
-            // 更新現價
             state.currentPrices[newTrans.code] = newTrans.price;
             
             saveData();
             closeModal();
             renderAll();
             
-            // 清空部分欄位
             document.getElementById('price').value = '';
             document.getElementById('qty').value = '';
             document.getElementById('fee').value = 0;
@@ -1115,7 +1160,6 @@
             document.getElementById('name').value = '';
         }
 
-        // Close modal when clicking outside
         window.onclick = function(event) {
             if (event.target == document.getElementById('transactionModal')) {
                 closeModal();
@@ -1126,7 +1170,6 @@
             if (event.target == document.getElementById('importExportModal')) {
                 closeImportExport();
             }
-            // Close dropdown if clicked outside
             if (!event.target.closest('.group') && !document.getElementById('accountMenu').classList.contains('hidden')) {
                  document.getElementById('accountMenu').classList.add('hidden');
             }
