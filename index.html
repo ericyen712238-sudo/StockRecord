@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台美股投資記帳本 (多帳戶版)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        /* 自定義捲軸 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid #e2e8f0;
+            border-bottom: none;
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            border-radius: 0 0 0.5rem 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .autocomplete-items div {
+            padding: 10px;
+            cursor: pointer;
+            background-color: #fff; 
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .autocomplete-items div:hover {
+            background-color: #f8fafc; 
+            color: #2563eb;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 pb-20 md:pb-0">
+
+    <!-- 導航列 -->
+    <nav class="bg-slate-900 text-white p-4 shadow-lg sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center justify-between w-full md:w-auto">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-chart-line text-red-400 text-xl"></i>
+                    <h1 class="text-xl font-bold tracking-wider">台美股記帳本</h1>
+                </div>
+                <!-- 手機版右側按鈕群 (如果需要可擴充) -->
+            </div>
+
+            <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+                <!-- 帳戶切換器 -->
+                <div class="relative group">
+                    <button onclick="toggleAccountMenu()" class="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors text-sm">
+                        <i class="fa-solid fa-wallet text-blue-400"></i>
+                        <span id="currentAccountLabel" class="font-medium">全部帳戶</span>
+                        <i class="fa-solid fa-chevron-down text-xs text-slate-400"></i>
+                    </button>
+                    <!-- 下拉選單 -->
+                    <div id="accountMenu" class="hidden absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 text-slate-800">
+                        <div id="accountListContainer" class="max-h-60 overflow-y-auto">
+                            <!-- JS 動態生成 -->
+                        </div>
+                        <div class="border-t border-slate-100 p-2 bg-slate-50">
+                            <button onclick="openAccountManager()" class="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-slate-200 rounded-lg flex items-center gap-2 font-medium">
+                                <i class="fa-solid fa-cog"></i> 管理帳戶
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="openModal()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 text-sm font-medium transition-colors shadow-md transform active:scale-95 whitespace-nowrap">
+                    <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">新增交易</span>
+                    <span class="sm:hidden">新增</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-5xl mx-auto p-4 space-y-6">
+        
+        <!-- 匯率設定 (簡易版) -->
+        <div class="flex justify-between items-center text-xs text-slate-500">
+             <div class="flex items-center gap-2">
+                <span id="viewingHint" class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-bold hidden">目前檢視：全部帳戶</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-earth-americas"></i>
+                <span>USD/TWD 匯率: </span>
+                <input type="number" id="exchangeRate" value="31.5" class="w-16 bg-white border border-slate-300 rounded px-1 text-center" onchange="updateDashboard()">
+            </div>
+        </div>
+
+        <!-- 總覽卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="summaryCards">
+            <!-- 由 JS 動態生成 -->
+        </div>
+
+        <!-- 標籤切換 -->
+        <div class="flex gap-4 border-b border-slate-200">
+            <button onclick="switchTab('portfolio')" id="tab-portfolio" class="pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-blue-600 text-blue-600">
+                <i class="fa-solid fa-chart-pie mr-1"></i> 庫存持股
+            </button>
+            <button onclick="switchTab('transactions')" id="tab-transactions" class="pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700">
+                <i class="fa-solid fa-list-ul mr-1"></i> 交易明細
+            </button>
+        </div>
+
+        <!-- 內容區域 -->
+        <div id="contentArea" class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden min-h-[300px]">
+            <!-- 由 JS 動態生成內容 -->
+        </div>
+    </div>
+
+    <!-- 新增交易 Modal -->
+    <div id="transactionModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100 fade-in flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50 shrink-0">
+                <h2 class="text-lg font-bold text-slate-800">新增交易</h2>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <form id="transactionForm" onsubmit="handleFormSubmit(event)" class="p-6 space-y-4 overflow-y-auto">
+                <!-- 帳戶選擇 -->
+                 <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">歸屬帳戶</label>
+                    <select id="modalAccountSelect" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium text-slate-700">
+                        <!-- JS 動態生成 -->
+                    </select>
+                </div>
+
+                <!-- 日期與類別 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">交易日期</label>
+                        <input type="date" id="date" required class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">交易類別</label>
+                        <div class="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                            <button type="button" onclick="setTransactionType('buy')" id="btn-buy" class="flex-1 py-1.5 text-sm font-medium rounded-md transition-all bg-red-500 text-white shadow-sm">買入</button>
+                            <button type="button" onclick="setTransactionType('sell')" id="btn-sell" class="flex-1 py-1.5 text-sm font-medium rounded-md transition-all text-slate-500 hover:bg-slate-200">賣出</button>
+                        </div>
+                        <input type="hidden" id="type" value="buy">
+                    </div>
+                </div>
+
+                <!-- 股票代號 (自動完成) -->
+                <div class="relative">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">股票代號/名稱 (搜尋)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
+                        <input type="text" id="code" required placeholder="輸入 2330 或 AAPL..." autocomplete="off"
+                            class="w-full pl-9 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none uppercase font-mono"
+                            oninput="handleStockInput(this.value)">
+                    </div>
+                    <div id="autocomplete-list" class="autocomplete-items hidden"></div>
+                </div>
+
+                <!-- 股票資訊預覽 -->
+                <div class="grid grid-cols-2 gap-4">
+                     <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">股票名稱</label>
+                        <input type="text" id="name" placeholder="台積電" class="w-full border border-slate-300 bg-slate-50 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                         <label class="block text-xs font-bold text-slate-500 mb-1">市場幣別</label>
+                         <select id="currency" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                             <option value="TWD">TWD (台幣)</option>
+                             <option value="USD">USD (美元)</option>
+                         </select>
+                    </div>
+                </div>
+
+                <!-- 價格與數量 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">成交單價</label>
+                        <input type="number" id="price" step="0.01" required placeholder="0.00" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">股數</label>
+                        <input type="number" id="qty" required placeholder="1000" class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    </div>
+                </div>
+
+                <!-- 手續費 -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 mb-1">手續費 (含稅)</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-coins absolute left-3 top-3 text-slate-400"></i>
+                        <input type="number" id="fee" step="0.01" value="0" class="w-full pl-9 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-xl transition-all flex justify-center items-center gap-2 transform active:scale-[0.98]">
+                        <i class="fa-solid fa-save"></i> 儲存交易
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 帳戶管理 Modal -->
+    <div id="accountManagerModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden fade-in">
+            <div class="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
+                <h2 class="text-lg font-bold text-slate-800">管理帳戶</h2>
+                <button onclick="closeAccountManager()" class="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-5">
+                <!-- 新增帳戶 -->
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="newAccountName" placeholder="輸入新帳戶名稱..." class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    <button onclick="addNewAccount()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                        新增
+                    </button>
+                </div>
+
+                <!-- 帳戶列表 -->
+                <div class="space-y-2 max-h-60 overflow-y-auto" id="manageAccountList">
+                    <!-- JS 生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 邏輯 -->
+    <script>
+        // --- 1. 股票資料庫 (模擬 Database) ---
+        const STOCK_DB = [
+            // 台股
+            { code: '2330', name: '台積電', type: 'TW', price: 580 },
+            { code: '2317', name: '鴻海', type: 'TW', price: 102 },
+            { code: '2454', name: '聯發科', type: 'TW', price: 950 },
+            { code: '2603', name: '長榮', type: 'TW', price: 155 },
+            { code: '2303', name: '聯電', type: 'TW', price: 50.5 },
+            { code: '0050', name: '元大台灣50', type: 'TW', price: 135 },
+            { code: '0056', name: '元大高股息', type: 'TW', price: 35 },
+            { code: '00878', name: '國泰永續高股息', type: 'TW', price: 21.5 },
+            { code: '00929', name: '復華台灣科技優息', type: 'TW', price: 18.2 },
+            // 美股
+            { code: 'AAPL', name: 'Apple Inc.', type: 'US', price: 195.5 },
+            { code: 'MSFT', name: 'Microsoft', type: 'US', price: 375.2 },
+            { code: 'TSLA', name: 'Tesla', type: 'US', price: 240.1 },
+            { code: 'NVDA', name: 'NVIDIA', type: 'US', price: 485.6 },
+            { code: 'GOOGL', name: 'Alphabet A', type: 'US', price: 138.2 },
+            { code: 'AMZN', name: 'Amazon', type: 'US', price: 145.8 },
+            { code: 'AMD', name: 'AMD', type: 'US', price: 120.5 },
+            { code: 'META', name: 'Meta', type: 'US', price: 330.4 },
+            { code: 'NFLX', name: 'Netflix', type: 'US', price: 475.2 },
+            { code: 'VOO', name: 'Vanguard S&P 500', type: 'US', price: 435.1 },
+            { code: 'QQQ', name: 'Invesco QQQ', type: 'US', price: 390.5 }
+        ];
+
+        // --- 2. 狀態管理 ---
+        const DEFAULT_ACC_ID = 'main_acc';
+        
+        let state = {
+            activeTab: 'portfolio',
+            transactions: JSON.parse(localStorage.getItem('stock_transactions')) || [],
+            currentPrices: JSON.parse(localStorage.getItem('stock_prices')) || {},
+            exchangeRate: 31.5,
+            accounts: JSON.parse(localStorage.getItem('stock_accounts')) || [{id: DEFAULT_ACC_ID, name: '主要帳戶'}],
+            activeAccountId: 'all' // 'all' or specific account id
+        };
+
+        // 初始化與遷移邏輯
+        window.onload = () => {
+            // 資料遷移：如果舊資料沒有 accountId，分配給預設帳戶
+            let migrated = false;
+            state.transactions.forEach(t => {
+                if (!t.accountId) {
+                    t.accountId = DEFAULT_ACC_ID;
+                    migrated = true;
+                }
+            });
+            if (migrated) {
+                saveData();
+            }
+
+            // 設定今日日期
+            document.getElementById('date').valueAsDate = new Date();
+            
+            // 如果沒有價格紀錄，從 DB 初始化部分
+            if (Object.keys(state.currentPrices).length === 0) {
+                STOCK_DB.forEach(stock => {
+                    state.currentPrices[stock.code] = stock.price;
+                });
+            }
+
+            updateAccountMenuUI();
+            renderAll();
+        };
+
+        function saveData() {
+            localStorage.setItem('stock_transactions', JSON.stringify(state.transactions));
+            localStorage.setItem('stock_accounts', JSON.stringify(state.accounts));
+            localStorage.setItem('stock_prices', JSON.stringify(state.currentPrices));
+        }
+
+        // --- 3. 核心邏輯 (計算) ---
+        function calculatePortfolio() {
+            const holdings = {};
+            let totalRealizedPnL_TWD = 0;
+
+            // 根據 activeAccountId 過濾交易
+            const filteredTrans = state.activeAccountId === 'all' 
+                ? state.transactions 
+                : state.transactions.filter(t => t.accountId === state.activeAccountId);
+
+            const sortedTrans = [...filteredTrans].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            sortedTrans.forEach(t => {
+                // 如果是 All 視圖，key 加上 accountId 避免不同帳戶同股票混淆？
+                // 決定：All 視圖合併計算同代號股票，方便看總曝險。
+                const key = t.code; 
+                
+                if (!holdings[key]) {
+                    holdings[key] = { 
+                        code: t.code, 
+                        name: t.name, 
+                        currency: t.currency || 'TWD',
+                        qty: 0, 
+                        totalCost: 0, 
+                        avgCost: 0,
+                        realizedPnL: 0 
+                    };
+                }
+                
+                const stock = holdings[key];
+                const fee = Number(t.fee);
+                const qty = Number(t.qty);
+                const price = Number(t.price);
+
+                if (t.type === 'buy') {
+                    stock.qty += qty;
+                    stock.totalCost += (price * qty) + fee;
+                    stock.avgCost = stock.qty > 0 ? stock.totalCost / stock.qty : 0;
+                } else {
+                    // Sell
+                    const costBasis = stock.avgCost * qty;
+                    const revenue = (price * qty) - fee;
+                    const tradePnL = revenue - costBasis;
+                    
+                    stock.realizedPnL += tradePnL;
+                    // 將已實現損益換算回台幣加總 (若是美股)
+                    totalRealizedPnL_TWD += (stock.currency === 'USD' ? tradePnL * state.exchangeRate : tradePnL);
+
+                    stock.qty -= qty;
+                    stock.totalCost -= costBasis;
+                    
+                    if (stock.qty <= 0) {
+                        stock.qty = 0; stock.totalCost = 0; stock.avgCost = 0;
+                    }
+                }
+            });
+
+            // 計算現值與未實現損益
+            const holdingList = Object.values(holdings).filter(h => h.qty > 0 || h.realizedPnL !== 0).map(h => {
+                const currentPrice = state.currentPrices[h.code] || h.avgCost;
+                const marketValue = h.qty * currentPrice;
+                const unrealizedPnL = marketValue - h.totalCost;
+                const returnRate = h.totalCost > 0 ? (unrealizedPnL / h.totalCost) * 100 : 0;
+
+                return { ...h, currentPrice, marketValue, unrealizedPnL, returnRate };
+            });
+
+            // 總資產計算 (全部換算回 TWD)
+            let totalMarketValue_TWD = 0;
+            let totalCost_TWD = 0;
+
+            holdingList.filter(h => h.qty > 0).forEach(h => {
+                const rate = h.currency === 'USD' ? state.exchangeRate : 1;
+                totalMarketValue_TWD += h.marketValue * rate;
+                totalCost_TWD += h.totalCost * rate;
+            });
+
+            const totalUnrealizedPnL_TWD = totalMarketValue_TWD - totalCost_TWD;
+
+            return {
+                holdings: holdingList.filter(h => h.qty > 0),
+                summary: {
+                    totalMarketValue_TWD,
+                    totalCost_TWD,
+                    totalUnrealizedPnL_TWD,
+                    totalRealizedPnL_TWD
+                }
+            };
+        }
+
+        // --- 4. 渲染 UI ---
+        function renderAll() {
+            state.exchangeRate = Number(document.getElementById('exchangeRate').value) || 31.5;
+            const data = calculatePortfolio();
+            renderSummary(data.summary);
+            
+            // Update Hint
+            const hint = document.getElementById('viewingHint');
+            if (state.activeAccountId === 'all') {
+                hint.innerText = `目前檢視：全部帳戶`;
+                hint.className = "bg-slate-800 text-white px-2 py-0.5 rounded-md font-bold text-xs";
+            } else {
+                const acc = state.accounts.find(a => a.id === state.activeAccountId);
+                hint.innerText = `目前檢視：${acc ? acc.name : '未知帳戶'}`;
+                hint.className = "bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-bold text-xs";
+            }
+            hint.classList.remove('hidden');
+
+            if (state.activeTab === 'portfolio') {
+                renderPortfolioTable(data.holdings);
+            } else {
+                renderTransactionsTable();
+            }
+        }
+
+        function updateDashboard() {
+            renderAll();
+        }
+
+        function renderSummary(summary) {
+            const getColor = (val) => val > 0 ? 'text-red-500' : (val < 0 ? 'text-green-500' : 'text-slate-500');
+            const format = (val) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0 }).format(val);
+            
+            const roi = summary.totalCost_TWD > 0 ? ((summary.totalUnrealizedPnL_TWD / summary.totalCost_TWD) * 100).toFixed(2) : '0.00';
+
+            document.getElementById('summaryCards').innerHTML = `
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 class="text-slate-500 text-sm font-medium mb-1">庫存總市值 (TWD)</h3>
+                    <p class="text-3xl font-bold text-slate-800">${format(summary.totalMarketValue_TWD)}</p>
+                    <div class="text-xs text-slate-400 mt-2">含美股換算 (${state.exchangeRate})</div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 class="text-slate-500 text-sm font-medium mb-1">未實現損益 (TWD)</h3>
+                    <p class="text-3xl font-bold ${getColor(summary.totalUnrealizedPnL_TWD)}">
+                        ${summary.totalUnrealizedPnL_TWD > 0 ? '+' : ''}${format(summary.totalUnrealizedPnL_TWD)}
+                    </p>
+                    <p class="text-sm mt-1 font-medium ${getColor(summary.totalUnrealizedPnL_TWD)}">${roi}% 報酬率</p>
+                </div>
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 class="text-slate-500 text-sm font-medium mb-1">已實現損益 (TWD)</h3>
+                    <p class="text-3xl font-bold ${getColor(summary.totalRealizedPnL_TWD)}">
+                        ${summary.totalRealizedPnL_TWD > 0 ? '+' : ''}${format(summary.totalRealizedPnL_TWD)}
+                    </p>
+                    <div class="text-xs text-slate-400 mt-2">歷史獲利總結算</div>
+                </div>
+            `;
+        }
+
+        function renderPortfolioTable(holdings) {
+            const container = document.getElementById('contentArea');
+            if (holdings.length === 0) {
+                container.innerHTML = `<div class="p-12 text-center text-slate-400 flex flex-col items-center">
+                    <i class="fa-solid fa-chart-pie text-5xl mb-4 opacity-20"></i>
+                    <p>此帳戶目前沒有庫存持股。</p>
+                </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                            <tr>
+                                <th class="p-4 font-semibold sticky left-0 bg-slate-50 z-10">股票</th>
+                                <th class="p-4 font-semibold text-right">股數</th>
+                                <th class="p-4 font-semibold text-right">均價</th>
+                                <th class="p-4 font-semibold text-right w-32">現價 (可改)</th>
+                                <th class="p-4 font-semibold text-right">市值</th>
+                                <th class="p-4 font-semibold text-right">損益</th>
+                                <th class="p-4 font-semibold text-right">報酬率</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+            `;
+
+            holdings.forEach(h => {
+                const currencySymbol = h.currency === 'USD' ? '$' : 'NT$';
+                const pnlColor = h.unrealizedPnL > 0 ? 'text-red-500' : (h.unrealizedPnL < 0 ? 'text-green-500' : 'text-slate-500');
+                const badgeColor = h.returnRate > 0 ? 'bg-red-50 text-red-600' : (h.returnRate < 0 ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500');
+                
+                // 格式化：美股保留2位小數，台股整數(市值)
+                const fmtMoney = (val) => new Intl.NumberFormat('en-US', { minimumFractionDigits: h.currency==='USD'?2:0, maximumFractionDigits: 2 }).format(val);
+
+                html += `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="p-4 sticky left-0 bg-white hover:bg-slate-50 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                            <div class="font-bold text-slate-800 flex items-center gap-2">
+                                <span class="px-1.5 py-0.5 rounded text-[10px] ${h.currency==='USD'?'bg-blue-100 text-blue-700':'bg-slate-200 text-slate-600'}">${h.currency}</span>
+                                ${h.name}
+                            </div>
+                            <div class="text-xs text-slate-400 mt-0.5">${h.code}</div>
+                        </td>
+                        <td class="p-4 text-right font-mono">${h.qty}</td>
+                        <td class="p-4 text-right font-mono text-slate-500">${fmtMoney(h.avgCost)}</td>
+                        <td class="p-4 text-right">
+                            <input type="number" step="${h.currency==='USD'?'0.01':'0.1'}" 
+                                value="${h.currentPrice}" 
+                                onchange="updatePrice('${h.code}', this.value)"
+                                class="w-20 text-right border border-slate-200 rounded px-1 py-1 focus:outline-none focus:border-blue-500 font-mono bg-white hover:border-slate-300 transition-colors"
+                            >
+                        </td>
+                        <td class="p-4 text-right font-medium">${currencySymbol} ${fmtMoney(h.marketValue)}</td>
+                        <td class="p-4 text-right font-bold ${pnlColor}">
+                            ${h.unrealizedPnL > 0 ? '+' : ''}${fmtMoney(h.unrealizedPnL)}
+                        </td>
+                        <td class="p-4 text-right">
+                            <span class="px-2 py-1 rounded text-xs font-bold ${badgeColor}">
+                                ${h.returnRate > 0 ? '+' : ''}${h.returnRate.toFixed(2)}%
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `</tbody></table></div>`;
+            container.innerHTML = html;
+        }
+
+        function renderTransactionsTable() {
+            const container = document.getElementById('contentArea');
+            // Filter first
+            const filteredTrans = state.activeAccountId === 'all' 
+                ? state.transactions 
+                : state.transactions.filter(t => t.accountId === state.activeAccountId);
+            
+            const trans = [...filteredTrans].reverse();
+
+            if (trans.length === 0) {
+                container.innerHTML = `<div class="p-12 text-center text-slate-400">尚無交易紀錄</div>`;
+                return;
+            }
+
+            let html = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse whitespace-nowrap">
+                        <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                            <tr>
+                                <th class="p-4">日期</th>
+                                ${state.activeAccountId === 'all' ? '<th class="p-4">帳戶</th>' : ''}
+                                <th class="p-4">類別</th>
+                                <th class="p-4">股票</th>
+                                <th class="p-4 text-right">價格</th>
+                                <th class="p-4 text-right">股數</th>
+                                <th class="p-4 text-right">費用</th>
+                                <th class="p-4 text-right">總金額</th>
+                                <th class="p-4 text-center">刪除</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+            `;
+
+            trans.forEach(t => {
+                const isBuy = t.type === 'buy';
+                const total = (t.price * t.qty) + (isBuy ? Number(t.fee) : -Number(t.fee));
+                const currency = t.currency || 'TWD';
+                // 找帳戶名稱
+                const accName = state.accounts.find(a => a.id === t.accountId)?.name || '未知';
+                
+                html += `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-4 text-slate-500 text-xs">${t.date}</td>
+                         ${state.activeAccountId === 'all' ? `<td class="p-4 text-xs text-slate-500">${accName}</td>` : ''}
+                        <td class="p-4">
+                            <span class="px-2 py-1 rounded text-xs font-bold ${isBuy ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">
+                                ${isBuy ? '買入' : '賣出'}
+                            </span>
+                        </td>
+                        <td class="p-4">
+                            <div class="text-slate-800 font-medium">${t.name}</div>
+                            <div class="text-xs text-slate-400">${t.code}</div>
+                        </td>
+                        <td class="p-4 text-right font-mono">${t.price}</td>
+                        <td class="p-4 text-right font-mono">${t.qty}</td>
+                        <td class="p-4 text-right text-slate-400 text-xs">${t.fee}</td>
+                        <td class="p-4 text-right font-bold text-slate-700">${currency} ${total.toLocaleString()}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="deleteTransaction(${t.id})" class="text-slate-300 hover:text-red-500 transition-colors p-2">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+            html += `</tbody></table></div>`;
+            container.innerHTML = html;
+        }
+
+        // --- 5. 帳戶管理功能 ---
+        function toggleAccountMenu() {
+            const menu = document.getElementById('accountMenu');
+            menu.classList.toggle('hidden');
+        }
+
+        // 更新帳戶選單 UI
+        function updateAccountMenuUI() {
+            // 1. 更新 Navbar 下拉清單
+            const listContainer = document.getElementById('accountListContainer');
+            listContainer.innerHTML = '';
+            
+            // "全部帳戶" 選項
+            const allDiv = document.createElement('div');
+            allDiv.className = `px-4 py-3 cursor-pointer hover:bg-slate-50 flex justify-between items-center ${state.activeAccountId === 'all' ? 'bg-blue-50 text-blue-700' : ''}`;
+            allDiv.onclick = () => switchAccount('all');
+            allDiv.innerHTML = `<span class="font-medium">全部帳戶 (總覽)</span> ${state.activeAccountId === 'all' ? '<i class="fa-solid fa-check text-xs"></i>' : ''}`;
+            listContainer.appendChild(allDiv);
+
+            // 個別帳戶選項
+            state.accounts.forEach(acc => {
+                const div = document.createElement('div');
+                div.className = `px-4 py-3 cursor-pointer hover:bg-slate-50 flex justify-between items-center border-t border-slate-50 ${state.activeAccountId === acc.id ? 'bg-blue-50 text-blue-700' : ''}`;
+                div.onclick = () => switchAccount(acc.id);
+                div.innerHTML = `<span>${acc.name}</span> ${state.activeAccountId === acc.id ? '<i class="fa-solid fa-check text-xs"></i>' : ''}`;
+                listContainer.appendChild(div);
+            });
+
+            // 2. 更新 Navbar 按鈕文字
+            const currentLabel = document.getElementById('currentAccountLabel');
+            if (state.activeAccountId === 'all') {
+                currentLabel.innerText = "全部帳戶";
+            } else {
+                const acc = state.accounts.find(a => a.id === state.activeAccountId);
+                currentLabel.innerText = acc ? acc.name : '選擇帳戶';
+            }
+
+            // 3. 更新 Modal 裡的選單
+            const modalSelect = document.getElementById('modalAccountSelect');
+            modalSelect.innerHTML = '';
+            state.accounts.forEach(acc => {
+                const opt = document.createElement('option');
+                opt.value = acc.id;
+                opt.text = acc.name;
+                modalSelect.appendChild(opt);
+            });
+            
+            // 如果當前是在特定帳戶下，Modal 預設選該帳戶
+            if (state.activeAccountId !== 'all') {
+                modalSelect.value = state.activeAccountId;
+            }
+        }
+
+        function switchAccount(id) {
+            state.activeAccountId = id;
+            document.getElementById('accountMenu').classList.add('hidden');
+            updateAccountMenuUI();
+            renderAll();
+        }
+
+        function openAccountManager() {
+            document.getElementById('accountMenu').classList.add('hidden');
+            document.getElementById('accountManagerModal').classList.remove('hidden');
+            document.getElementById('accountManagerModal').classList.add('flex');
+            renderAccountManagerList();
+        }
+
+        function closeAccountManager() {
+            document.getElementById('accountManagerModal').classList.add('hidden');
+            document.getElementById('accountManagerModal').classList.remove('flex');
+        }
+
+        function renderAccountManagerList() {
+            const list = document.getElementById('manageAccountList');
+            list.innerHTML = '';
+            
+            state.accounts.forEach(acc => {
+                const div = document.createElement('div');
+                div.className = "flex justify-between items-center bg-slate-50 p-3 rounded-lg";
+                // 不允許刪除最後一個帳戶
+                const canDelete = state.accounts.length > 1;
+                
+                div.innerHTML = `
+                    <span class="font-medium text-slate-700">${acc.name}</span>
+                    ${canDelete ? `
+                        <button onclick="deleteAccount('${acc.id}')" class="text-slate-400 hover:text-red-500 transition-colors text-sm px-2">
+                            <i class="fa-solid fa-trash"></i> 刪除
+                        </button>
+                    ` : '<span class="text-xs text-slate-300">預設</span>'}
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function addNewAccount() {
+            const input = document.getElementById('newAccountName');
+            const name = input.value.trim();
+            if (!name) return;
+
+            const newId = 'acc_' + Date.now();
+            state.accounts.push({ id: newId, name: name });
+            saveData();
+            
+            input.value = '';
+            renderAccountManagerList();
+            updateAccountMenuUI();
+        }
+
+        function deleteAccount(id) {
+            if (!confirm("刪除帳戶不會刪除裡面的交易紀錄，但紀錄會變成孤兒無法顯示(除非歸戶到別的)。\n\n確定要刪除嗎？")) return;
+            
+            state.accounts = state.accounts.filter(a => a.id !== id);
+            // 若刪除的是當前帳戶，切回 All
+            if (state.activeAccountId === id) {
+                state.activeAccountId = 'all';
+            }
+            // 簡單處理：將該帳戶的交易歸到第一個帳戶 (避免資料遺失)
+            const fallbackId = state.accounts[0].id;
+            state.transactions.forEach(t => {
+                if(t.accountId === id) t.accountId = fallbackId;
+            });
+
+            saveData();
+            renderAccountManagerList();
+            updateAccountMenuUI();
+            renderAll();
+        }
+
+        // --- 6. 其他 UI 功能 ---
+        function switchTab(tab) {
+            state.activeTab = tab;
+            // Update UI styles
+            document.getElementById('tab-portfolio').className = tab === 'portfolio' ? 
+                'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-blue-600 text-blue-600' : 
+                'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700';
+            
+            document.getElementById('tab-transactions').className = tab === 'transactions' ? 
+                'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-blue-600 text-blue-600' : 
+                'pb-3 px-2 text-sm font-medium transition-colors border-b-2 border-transparent text-slate-500 hover:text-slate-700';
+            
+            renderAll();
+        }
+
+        function updatePrice(code, newPrice) {
+            state.currentPrices[code] = Number(newPrice);
+            saveData();
+            renderAll();
+        }
+
+        function deleteTransaction(id) {
+            if(confirm('確定要刪除這筆紀錄嗎？')) {
+                state.transactions = state.transactions.filter(t => t.id !== id);
+                saveData();
+                renderAll();
+            }
+        }
+
+        // --- Modal & Form ---
+        function openModal() {
+            document.getElementById('transactionModal').classList.remove('hidden');
+            document.getElementById('transactionModal').classList.add('flex');
+            // 如果當前是 All，選單預設選第一個，否則選當前
+            const select = document.getElementById('modalAccountSelect');
+            if (state.activeAccountId !== 'all') {
+                select.value = state.activeAccountId;
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('transactionModal').classList.add('hidden');
+            document.getElementById('transactionModal').classList.remove('flex');
+            // Reset form suggestion
+            document.getElementById('autocomplete-list').innerHTML = '';
+            document.getElementById('autocomplete-list').classList.add('hidden');
+        }
+
+        function setTransactionType(type) {
+            document.getElementById('type').value = type;
+            const btnBuy = document.getElementById('btn-buy');
+            const btnSell = document.getElementById('btn-sell');
+            
+            if (type === 'buy') {
+                btnBuy.className = "flex-1 py-1.5 text-sm font-medium rounded-md transition-all bg-red-500 text-white shadow-sm";
+                btnSell.className = "flex-1 py-1.5 text-sm font-medium rounded-md transition-all text-slate-500 hover:bg-slate-200";
+            } else {
+                btnBuy.className = "flex-1 py-1.5 text-sm font-medium rounded-md transition-all text-slate-500 hover:bg-slate-200";
+                btnSell.className = "flex-1 py-1.5 text-sm font-medium rounded-md transition-all bg-green-600 text-white shadow-sm";
+            }
+        }
+
+        // 搜尋自動完成功能
+        function handleStockInput(val) {
+            const list = document.getElementById('autocomplete-list');
+            list.innerHTML = '';
+            list.classList.add('hidden');
+            
+            if (!val) return;
+
+            const matches = STOCK_DB.filter(s => 
+                s.code.includes(val.toUpperCase()) || s.name.includes(val)
+            );
+
+            if (matches.length > 0) {
+                list.classList.remove('hidden');
+                matches.forEach(match => {
+                    const div = document.createElement('div');
+                    div.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold">${match.code}</span>
+                            <span class="text-sm text-slate-500">${match.name}</span>
+                        </div>
+                        <div class="text-xs text-slate-400 mt-1 flex justify-between">
+                            <span>${match.type === 'TW' ? '🇹🇼 台股' : '🇺🇸 美股'}</span>
+                            <span>參考價: ${match.price}</span>
+                        </div>
+                    `;
+                    div.onclick = () => selectStock(match);
+                    list.appendChild(div);
+                });
+            }
+        }
+
+        function selectStock(stock) {
+            document.getElementById('code').value = stock.code;
+            document.getElementById('name').value = stock.name;
+            document.getElementById('price').value = stock.price;
+            document.getElementById('currency').value = stock.type === 'TW' ? 'TWD' : 'USD';
+            
+            document.getElementById('autocomplete-list').innerHTML = '';
+            document.getElementById('autocomplete-list').classList.add('hidden');
+        }
+
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            const newTrans = {
+                id: Date.now(),
+                accountId: document.getElementById('modalAccountSelect').value,
+                date: document.getElementById('date').value,
+                type: document.getElementById('type').value,
+                code: document.getElementById('code').value.toUpperCase(),
+                name: document.getElementById('name').value || document.getElementById('code').value,
+                currency: document.getElementById('currency').value,
+                price: Number(document.getElementById('price').value),
+                qty: Number(document.getElementById('qty').value),
+                fee: Number(document.getElementById('fee').value)
+            };
+
+            state.transactions.push(newTrans);
+            
+            // 更新現價
+            state.currentPrices[newTrans.code] = newTrans.price;
+            
+            saveData();
+            closeModal();
+            renderAll();
+            
+            // 清空部分欄位
+            document.getElementById('price').value = '';
+            document.getElementById('qty').value = '';
+            document.getElementById('fee').value = 0;
+            document.getElementById('code').value = '';
+            document.getElementById('name').value = '';
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target == document.getElementById('transactionModal')) {
+                closeModal();
+            }
+            if (event.target == document.getElementById('accountManagerModal')) {
+                closeAccountManager();
+            }
+            // Close dropdown if clicked outside
+            if (!event.target.closest('.group') && !document.getElementById('accountMenu').classList.contains('hidden')) {
+                 document.getElementById('accountMenu').classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
